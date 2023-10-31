@@ -1,4 +1,5 @@
 import Foundation
+import CoreLocation
 
 // MARK: GeoJsonCodable
 
@@ -29,6 +30,51 @@ extension GeoJson {
         try container.encode(geoJson: asJson)
     }
 
+}
+
+extension LineString: Codable {
+    public init(from decoder: Decoder) throws {
+        var container = try decoder.container(keyedBy: CodingKeys.self)
+        coordinates = try container.decode([Coordinate3D].self, forKey: .coordinates)
+    }
+
+    /// Write the GeoJSON object to an Encoder.
+    ///
+    /// - important: Always projected to EPSG:4326, unless the receiver has no SRID.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+
+        try container.encode(coordinates, forKey: .coordinates)
+    }
+    
+    enum CodingKeys : String, CodingKey {
+        case coordinates
+    }
+}
+
+// Override provided codable with a version that works with SwiftData
+extension MultiLineString {
+    public init(from decoder: Decoder) throws {
+        var container = try decoder.container(keyedBy: CodingKeys.self)
+
+        let coordinates = try container.decode([[Coordinate3D]].self, forKey: .coordinates)
+
+        let newObject = Self(unchecked: coordinates)
+        self = newObject
+    }
+
+    /// Write the GeoJSON object to an Encoder.
+    ///
+    /// - important: Always projected to EPSG:4326, unless the receiver has no SRID.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+
+        try container.encode(coordinates, forKey: .coordinates)
+    }
+    
+    enum CodingKeys : String, CodingKey {
+        case coordinates
+    }
 }
 
 extension BoundingBox: Codable {
@@ -62,30 +108,35 @@ extension BoundingBox: Codable {
 
 extension Coordinate3D: Codable {
 
-    /// Try to initialize a Coordinate3D from a Decoder.
-    ///
-    /// - important: The source is expected to be in EPSG:4326.
-    public init(from decoder: Decoder) throws {
-        var container = try decoder.unkeyedContainer()
-        let json = container.decodeGeoJsonArray()
-
-        guard let newObject = Self(json: json) else {
-            throw DecodingError.dataCorrupted(DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Invalid JSON object"))
-        }
-
-        self = newObject
-    }
-
-    /// Write the Coordinate3D to an Encoder.
-    ///
-    /// - important: Always projected to EPSG:4326, unless the receiver has no SRID.
     public func encode(to encoder: Encoder) throws {
         var container = encoder.unkeyedContainer()
-
-        for element in asJson {
-            try container.encode(element)
+        try container.encode(longitude)
+        try container.encode(latitude)
+        if let altitude {
+            try container.encode(altitude)
+            if let m {
+                try container.encode(m)
+            }
         }
     }
+
+    public init(from decoder: Decoder) throws {
+        var container = try decoder.unkeyedContainer()
+        longitude = try container.decode(CLLocationDegrees.self)
+        latitude = try container.decode(CLLocationDegrees.self)
+        if container.isAtEnd {
+            altitude = nil
+        } else {
+            altitude = try container.decode(CLLocationDistance.self)
+        }
+        if container.isAtEnd {
+            m = nil
+        } else {
+            m = try container.decode(Double.self)
+        }
+        projection = .epsg4326
+    }
+
 
 }
 
